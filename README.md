@@ -1,6 +1,6 @@
 # dmgen & dmdecode — Data Matrix Barcode Tools
 
-A fast, dependency-light C++ CLI toolset for **generating** (`dmgen`) and **decoding** (`dmdecode`) Data Matrix (ISO/IEC 16022) barcodes. Designed for rapid label generation and highly robust factory-floor scanning in manufacturing, logistics, and asset-tracking workflows.
+A fast, dependency-light C++ CLI toolset for **generating** (`dmgen`) and **decoding** (`dmdecode`) Data Matrix barcodes. Designed for rapid label generation and highly robust factory-floor scanning in manufacturing, logistics, and asset-tracking workflows.
 
 ---
 
