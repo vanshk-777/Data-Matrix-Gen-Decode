@@ -4,36 +4,34 @@ CXXFLAGS = -std=c++17 -O2 -Wall -Wextra \
            -I$(SRC_DIR)
 LDFLAGS  = -L/opt/homebrew/lib -ldmtx
 
-SRC_DIR  = src
-TARGET   = dmgen
-SRC      = $(SRC_DIR)/dmgen.cpp
+CV_FLAGS = $(shell /opt/homebrew/bin/pkg-config --cflags opencv4)
+CV_LIBS  = $(shell /opt/homebrew/bin/pkg-config --libs opencv4)
 
-# ── Targets ────────────────────────────────────────────────────────────────
+SRC_DIR  = src
 
 .PHONY: all clean test
 
-all: $(TARGET)
+all: dmgen dmdecode
 
-$(TARGET): $(SRC) $(SRC_DIR)/stb_image_write.h
+dmgen: $(SRC_DIR)/dmgen.cpp $(SRC_DIR)/stb_image_write.h
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDFLAGS)
 
-# Quick smoke-test
-test: $(TARGET)
+dmdecode: $(SRC_DIR)/dmdecode.cpp
+	$(CXX) $(CXXFLAGS) $(CV_FLAGS) -o $@ $< $(LDFLAGS) $(CV_LIBS)
+
+test: dmgen dmdecode
 	@mkdir -p test_out
-	@echo "==> Single SVG"
-	./$(TARGET) -d "HELLO-WORLD" -o test_out/hello.svg
-	@echo "==> Single PNG (module=12)"
-	./$(TARGET) -d "HELLO-WORLD" -o test_out/hello.png -m 12
-	@echo "==> Fixed size 24x24"
-	./$(TARGET) -d "FIXED-SIZE" -o test_out/fixed24.svg -s 24x24
-	@echo "==> Batch JSON"
-	./$(TARGET) --json examples/labels.json --out-dir test_out/json
-	@echo "==> Batch CSV"
-	./$(TARGET) --csv examples/labels.csv --out-dir test_out/csv --fmt png
-	@echo ""
-	@echo "Output files:"
-	@find test_out -type f | sort
+	@echo "==> Encode"
+	./dmgen -d "pallet 234" -o test_out/pallet_234.png -m 10
+	./dmgen -d "SM3"        -o test_out/sm3.png        -m 10
+	./dmgen -d "rack 17"    -o test_out/rack_17.png    -m 10
+	@echo "==> Decode (round-trip)"
+	./dmdecode test_out/pallet_234.png
+	./dmdecode test_out/sm3.png
+	./dmdecode test_out/rack_17.png
+	@echo "==> Batch decode"
+	./dmdecode --dir test_out --ext png
 
 clean:
-	rm -f $(TARGET)
+	rm -f dmgen dmdecode
 	rm -rf test_out

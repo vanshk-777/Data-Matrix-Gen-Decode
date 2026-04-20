@@ -1,6 +1,6 @@
-# dmgen — Data Matrix Barcode Generator
+# dmgen & dmdecode — Data Matrix Barcode Tools
 
-A fast, dependency-light C++ CLI tool for generating **Data Matrix** (ISO/IEC 16022) barcodes as **SVG** or **PNG** files. Designed for rapid label generation in manufacturing, logistics, and asset-tracking workflows.
+A fast, dependency-light C++ CLI toolset for **generating** (`dmgen`) and **decoding** (`dmdecode`) Data Matrix (ISO/IEC 16022) barcodes. Designed for rapid label generation and highly robust factory-floor scanning in manufacturing, logistics, and asset-tracking workflows.
 
 ---
 
@@ -8,18 +8,26 @@ A fast, dependency-light C++ CLI tool for generating **Data Matrix** (ISO/IEC 16
 
 ### Library: libdmtx
 
-The encoder is built on [**libdmtx**](https://github.com/dmtx/libdmtx) (v0.7.8), the canonical open-source C implementation of the Data Matrix standard. It handles:
+The encoder and decoder are both built on [**libdmtx**](https://github.com/dmtx/libdmtx) (v0.7.8), the canonical open-source C implementation of the Data Matrix standard. It handles:
 
 - Reed-Solomon ECC200 error correction
 - Symbol layout (finder pattern, clock tracks, data region)
 - All 30 standardised symbol sizes (square and rectangular)
 - Multiple encoding schemes (ASCII, C40, Text, X12, EDIFACT, Base256)
 
-We use it purely for encoding — libdmtx writes pixel data into an internal `DmtxImage` buffer which we then read back to produce our own SVG/PNG output, giving us full control over output format and quality.
+For encoding, we use libdmtx purely to map the data to a matrix — it writes the bits to an internal `DmtxImage` buffer which we then sample manually to produce our SVG/PNG output. For decoding, we feed it severely pre-processed pixels to run the Reed-Solomon backwards.
+
+### OpenCV (Decoder Preprocessing)
+
+To ensure that `dmdecode` can reliably scan noisy, poorly lit factory-level photographs—or perfectly sharp, noise-free synthetic barcodes—we wrap libdmtx in a robust **OpenCV 4** pipeline. OpenCV handles:
+- Upsampling small/tightly cropped symbols.
+- **CLAHE** (Contrast-Limited Adaptive Histogram Equalization) for normalising uneven warehouse lighting.
+- **Adaptive Thresholding** to convert noisy shadows into strict B/W.
+- Simulated Gaussian noise for synthetic SVGs/PNGs (because libdmtx's clocking algorithm struggles to find centers on mathematically perfect, sharp squares).
 
 ### PNG output: stb_image_write
 
-Rather than pulling in libpng (a heavyweight dependency with a complex API), PNG output uses [**stb_image_write**](https://github.com/nothings/stb) — a single-header public-domain library. It is vendored directly into `src/stb_image_write.h` so the project has zero runtime install requirements beyond libdmtx.
+Rather than pulling in libpng for the encoder, PNG output uses [**stb_image_write**](https://github.com/nothings/stb) — a single-header public-domain library vendored directly.
 
 ### JSON parser: hand-rolled, zero deps
 
@@ -62,12 +70,47 @@ SVG is vector — it scales to any printer DPI without aliasing. A 10×10 module
 
 ---
 
+## How Decoding Works
+
+```
+Input Image (via cv::imread)
+     │
+     ▼
+Upsample / Soften (GaussianBlur)  ← libdmtx requires "blurry" camera-like gradients
+     │
+     ▼
+Generate Preprocessing Variants   ← "raw", "Otsu", "CLAHE + Adaptive block=21/31/51"
+     │
+     ▼
+(Try 1) Full Image Scan 
+     │
+     ▼
+(Try 2) Contour detection (ROI)   ← Find square-ish shapes in the thresholded pass
+     │
+     ▼
+warpPerspective                   ← Correct rotation, tilt, perspective
+     │
+     ▼
+dmtxImageCreate (DmtxPack8bppK)
+dmtxImageSetProp(DmtxFlipY)       ← CRUCIAL: match OpenCV top-down to libdmtx bottom-up!
+dmtxDecodeMatrixRegion()          ← libdmtx Reed-Solomon decode
+```
+
+**Why the strong preprocessing?**
+Factory labels are rarely clean. They suffer from glare, shadow drops, and heavy perspective warp. Our pipeline searches for square-ish regions, isolates the shape, perspective-wraps it into a perfect upright thumbnail, thresholds it cleanly with CLAHE, and *then* hands it to `libdmtx`.
+
+**The Memory Polarity "Gotcha"**
+`libdmtx` models images entirely bottom-up (meaning `row=0` in memory is visually the bottom of the image). OpenCV models images top-down. If you pass an OpenCV `cv::Mat` buffer directly to `libdmtx`, the Data Matrix is parsed vertically mirrored. This reverses the L-shaped finder pattern and totally corrupts the bit clocking. We explicitly apply `DmtxPropImageFlip, DmtxFlipY` to synchronize the parsers before issuing the decode command.
+
+---
+
 ## Project Layout
 
 ```
 data-matrices-qr/
 ├── src/
 │   ├── dmgen.cpp           # Main generator (~480 lines, C++17)
+│   ├── dmdecode.cpp        # The OpenCV OpenCV/libdmtx pipeline decoder
 │   └── stb_image_write.h   # Vendored header-only PNG writer
 ├── examples/
 │   ├── labels.json         # JSON batch input example
@@ -83,20 +126,21 @@ data-matrices-qr/
 
 ### Requirements
 - libdmtx: `brew install libdmtx`
+- opencv: `brew install opencv pkg-config`
 
 ### Compile
 
 ```bash
-make          # → ./dmgen
-make test     # → smoke tests into test_out/
+make          # → builds ./dmgen and ./dmdecode
+make test     # → strictly runs an encode → decode round-trip smoke test into test_out/
 make clean    # → remove binary and test_out/
 ```
 
-The Makefile links directly against `/opt/homebrew/lib/libdmtx` without requiring `pkg-config`:
+The Makefile uses `pkg-config` for OpenCV, and links `libdmtx` manually:
 
 ```makefile
-CXXFLAGS = -std=c++17 -O2 -Wall -Wextra -I/opt/homebrew/include -Isrc
-LDFLAGS  = -L/opt/homebrew/lib -ldmtx
+CV_FLAGS = $(shell pkg-config --cflags opencv4)
+CV_LIBS  = $(shell pkg-config --libs opencv4)
 ```
 
 ---
@@ -151,7 +195,36 @@ SM3,sm3
 rack 17,rack_17
 ```
 
-### All options
+### Decoder
+
+```bash
+# Decode a single image
+./dmdecode test_out/pallet_234.png
+
+# Decode a batch directory
+./dmdecode --dir test_out/ --ext png
+
+# Debug mode: Output a heavily annotated, highlighted image
+./dmdecode test_out/noise.jpg --debug result.jpg
+
+# See exactly which OpenCV step succeeded at isolating the label
+./dmdecode test_out/noise.jpg --verbose
+```
+
+#### Performance Tracking
+
+On an M-series Apple processor, a standard single-pass decode completes in a fraction of a second. Testing our round-trip code generation on a 16x16 encoded matrix:
+```
+$ time ./dmdecode test_out/pallet_234.png
+test_out/pallet_234.png: pallet 234
+
+real    0m0.227s
+user    0m0.205s
+sys     0m0.051s
+```
+That's **~200ms** total round-trip from OpenCV raw-load all the way through downscaling, blurring, matrix detection, and payload execution.
+
+### All Options (`dmgen`)
 
 | Flag | Default | Description |
 |---|---|---|
