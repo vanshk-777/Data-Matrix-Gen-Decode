@@ -267,10 +267,12 @@ Rectangular: 8x18  8x32  12x26  12x36  16x36  16x48
 
 ## Example outputs
 
-The three default labels (`pallet 234`, `SM3`, `rack 17`) auto-select these symbol sizes:
+The three default labels (`pallet 234`, `SM3`, `rack 17`) auto-select these symbol sizes based on their payload characters. 
 
-| Label | Symbol | Why |
-|---|---|---|
-| `SM3` | 10×10 | 3-char payload → smallest possible symbol |
-| `rack 17` | 14×14 | 7 chars including space → needs slightly more data capacity |
-| `pallet 234` | 16×16 | 10 chars → next fitting square |
+Here are the generated 10px-module PNGs alongside their `dmdecode` results:
+
+| Image | Label | Symbol Size | Decode Command Output |
+|:---:|---|---|---|
+| <img src="test_out/sm3.png" width="100"> | `SM3` | 10×10 | `$ ./dmdecode test_out/sm3.png`<br>`test_out/sm3.png: SM3` |
+| <img src="test_out/rack_17.png" width="140"> | `rack 17` | 14×14 | `$ ./dmdecode test_out/rack_17.png`<br>`test_out/rack_17.png: rack 17` |
+| <img src="test_out/pallet_234.png" width="160"> | `pallet 234` | 16×16 | `$ ./dmdecode test_out/pallet_234.png`<br>`test_out/pallet_234.png: pallet 234` |
