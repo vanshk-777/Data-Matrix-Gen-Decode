@@ -82,9 +82,6 @@ data-matrices-qr/
 ## Build
 
 ### Requirements
-
-- macOS (Apple Silicon or Intel)
-- Xcode Command Line Tools: `xcode-select --install`
 - libdmtx: `brew install libdmtx`
 
 ### Compile
