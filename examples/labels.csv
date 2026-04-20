@@ -1,0 +1,4 @@
+# Data: payload,filename (filename is optional)
+pallet 234,pallet_234
+SM3,sm3
+rack 17,rack_17
