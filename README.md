@@ -234,7 +234,8 @@ That's **~200ms** total round-trip from OpenCV raw-load all the way through down
 | `--csv  <file>` | — | CSV batch input |
 | `--out-dir <dir>` | `out` | Output directory for batch mode |
 | `--fmt svg\|png` | `svg` | Batch output format |
-| `-m <px>` | `10` | Module (cell) size in pixels (1–100) |
+| `-m <px>` | `5` | Module (cell) size in pixels (1–100) |
+| `--max-dim <px>`| — | Maximum image dimension (auto-scales module size) |
 | `-s <NxN>` | `auto` | Symbol size — see `--sizes` |
 | `--sizes` | — | List all valid symbol sizes and exit |
 | `-h`, `--help` | — | Show help |
