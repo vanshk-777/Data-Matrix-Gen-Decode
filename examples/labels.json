@@ -10,5 +10,13 @@
     {
         "data": "rack 17",
         "filename": "rack_17"
+    },
+    {
+        "data": "Slot 40 Rack 30003",
+        "filename": "slot_40_rack_30003"
+    },
+    {
+        "data": "panel_state: Printed",
+        "filename": "panel_state_printed"
     }
 ]
