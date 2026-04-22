@@ -225,9 +225,9 @@ On an M-series Apple processor, a standard single-pass decode completes in a fra
 $ time ./dmdecode test_out/pallet_234.png
 test_out/pallet_234.png: pallet 234
 
-real    0m0.227s
-user    0m0.205s
-sys     0m0.051s
+real    0m0.217s
+user    0m0.19s
+sys     0m0.04s
 ```
 That's **~200ms** total round-trip from OpenCV raw-load all the way through downscaling, blurring, matrix detection, and payload execution.
 

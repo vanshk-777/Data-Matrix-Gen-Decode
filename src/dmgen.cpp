@@ -16,8 +16,6 @@
 
 namespace fs = std::filesystem;
 
-// Symbol size table
-
 struct SizeEntry {
   const char *name;
   DmtxSymbolSize val;
@@ -55,8 +53,6 @@ static void printSizes() {
   for (auto &e : SIZE_TABLE)
     std::cout << "  " << e.name << "\n";
 }
-
-// Encoding
 
 struct Grid {
   int rows, cols;
@@ -104,8 +100,6 @@ static Grid encode(const std::string &data, int moduleSize,
   dmtxEncodeDestroy(&enc);
   return g;
 }
-
-// Output
 
 static void writeSVG(const Grid &g, const std::string &path, int moduleSize,
                      const std::string &data) {
@@ -343,7 +337,8 @@ static void usage(const char *prog) {
                "svg|png]\n"
             << "\n"
             << "  -m <px>        Module size in pixels (default: 5)\n"
-            << "  --max-dim <px> Maximum image dimension. Dynamically overrides -m to fit.\n"
+            << "  --max-dim <px> Maximum image dimension. Dynamically "
+               "overrides -m to fit.\n"
             << "  -s <NxN>       Symbol size (default: auto). See --sizes.\n"
             << "  --fmt svg|png  Batch output format (default: svg)\n"
             << "  --sizes        List all valid symbol sizes\n";
@@ -417,7 +412,8 @@ int main(int argc, char *argv[]) {
       if (maxDim > 0) {
         int maxCells = std::max(g.cols, g.rows) + 4; // 2 * 2 quiet zone
         finalModule = maxDim / maxCells;
-        if (finalModule < 1) finalModule = 1;
+        if (finalModule < 1)
+          finalModule = 1;
       }
       std::string out =
           outFile.empty() ? sanitize(singleData) + ".svg" : outFile;
@@ -466,11 +462,13 @@ int main(int argc, char *argv[]) {
         if (maxDim > 0) {
           int maxCells = std::max(g.cols, g.rows) + 4;
           finalModule = maxDim / maxCells;
-          if (finalModule < 1) finalModule = 1;
+          if (finalModule < 1)
+            finalModule = 1;
         }
         writeOutput(g, outPath, finalModule, lbl.data);
         std::cout << "[" << (i + 1) << "/" << labels.size() << "] " << outPath
-                  << "  (" << g.cols << "x" << g.rows << " @ " << finalModule << "px/mod)\n";
+                  << "  (" << g.cols << "x" << g.rows << " @ " << finalModule
+                  << "px/mod)\n";
         ++ok;
       } catch (const std::exception &e) {
         std::cerr << "  ERROR '" << lbl.data << "': " << e.what() << "\n";

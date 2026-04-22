@@ -10,24 +10,14 @@
 
 namespace fs = std::filesystem;
 
-// ---------------------------------------------------------------------------
-// libdmtx decode from a preprocessed grayscale cv::Mat.
-// The image is expected to be pre-binarised (0=black, 255=white).
-// Internally inverts to match DmtxPack8bppK convention (0=white, 255=black)
-// and upsamples if too small, so libdmtx's edge detector fires reliably.
-// ---------------------------------------------------------------------------
-
 static std::string dmtxTryDecode(const cv::Mat &gray, int timeout_ms) {
-  // Upsample if too small — libdmtx edge detector needs ≥ 4px per module
   cv::Mat working = gray;
   if (working.cols < 200 || working.rows < 200) {
     double scale = 300.0 / std::max(working.cols, working.rows);
     cv::resize(working, working, {}, scale, scale, cv::INTER_LINEAR);
   }
-  // DmtxPack8bppK expects standard grayscale mapping: 0=black, 255=white
   cv::Mat inv = working;
 
-  // Ensure contiguous memory
   if (!inv.isContinuous())
     inv = inv.clone();
 
@@ -62,8 +52,6 @@ static std::string dmtxTryDecode(const cv::Mat &gray, int timeout_ms) {
   return result;
 }
 
-// Preprocessing variants — ordered cheapest-first
-
 struct Variant {
   cv::Mat img;
   std::string label;
@@ -72,24 +60,20 @@ struct Variant {
 static std::vector<Variant> buildVariants(const cv::Mat &gray) {
   std::vector<Variant> v;
 
-  // Pass 0: raw
   v.push_back({gray.clone(), "raw"});
 
-  // Pass 0.5: Synthetic simulation (blur + downscale + upsample to soften)
   {
     cv::Mat soft;
     cv::GaussianBlur(gray, soft, cv::Size(9, 9), 2.0);
     v.push_back({soft, "synthetic-blur"});
   }
 
-  // Pass 1: simple global Otsu threshold
   {
     cv::Mat t;
     cv::threshold(gray, t, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
     v.push_back({t, "otsu"});
   }
 
-  // Pass 2: CLAHE + adaptive threshold combos
   for (int inv : {0, 1})
     for (int block : {21, 31, 51})
       for (double cl : {2.0, 4.0}) {
@@ -107,26 +91,24 @@ static std::vector<Variant> buildVariants(const cv::Mat &gray) {
   return v;
 }
 
-// ROI candidates — look for square-ish contours that could be the symbol
-
 static std::vector<cv::RotatedRect> findCandidates(const cv::Mat &binary) {
   std::vector<std::vector<cv::Point>> contours;
   cv::findContours(binary, contours, cv::RETR_EXTERNAL,
                    cv::CHAIN_APPROX_SIMPLE);
 
-  // Sort by area descending
-  std::sort(contours.begin(), contours.end(),
-            [](const std::vector<cv::Point> &a, const std::vector<cv::Point> &b) {
-              return cv::contourArea(a) > cv::contourArea(b);
-            });
+  std::sort(
+      contours.begin(), contours.end(),
+      [](const std::vector<cv::Point> &a, const std::vector<cv::Point> &b) {
+        return cv::contourArea(a) > cv::contourArea(b);
+      });
 
   std::vector<cv::RotatedRect> out;
   for (auto &c : contours) {
-    if (out.size() >= 15) // Max 15 ROIs per lighting variant (reduced from 30)
+    if (out.size() >= 15)
       break;
 
     double area = cv::contourArea(c);
-    if (area < 900) // At least 30x30 pixels
+    if (area < 900)
       continue;
 
     cv::RotatedRect rr = cv::minAreaRect(c);
@@ -136,12 +118,10 @@ static std::vector<cv::RotatedRect> findCandidates(const cv::Mat &binary) {
 
     float aspect = (w > h) ? w / h : h / w;
     if (aspect < 4.0)
-      out.push_back(rr); // Reject elongated streaks
+      out.push_back(rr);
   }
   return out;
 }
-
-// Perspective-correct a rotated rect from the source image (grayscale)
 static cv::Mat warpROI(const cv::Mat &src, const cv::RotatedRect &rr,
                        int pad = 20) {
   float w = rr.size.width + pad * 2;
@@ -162,8 +142,6 @@ static cv::Mat warpROI(const cv::Mat &src, const cv::RotatedRect &rr,
   return warped;
 }
 
-// Full decode pipeline
-
 struct DecodeResult {
   std::string data;
   std::string pass;
@@ -177,8 +155,6 @@ static DecodeResult decodeImage(const cv::Mat &src, bool verbose) {
   else
     cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
 
-  // Downscale massive camera scans (e.g. 12+ Megapixel) to max ~1500px dimension
-  // to prevent adaptiveThreshold and contour mapping from taking too long.
   int max_dim = std::max(gray.cols, gray.rows);
   if (max_dim > 1500) {
     double scale = 1500.0 / max_dim;
@@ -188,7 +164,6 @@ static DecodeResult decodeImage(const cv::Mat &src, bool verbose) {
   auto variants = buildVariants(gray);
 
   for (auto &var : variants) {
-    // 1. Try full-image decode (give it 1.5s for huge phone scans!)
     std::string r = dmtxTryDecode(var.img, 1500);
     if (!r.empty()) {
       if (verbose)
@@ -196,18 +171,14 @@ static DecodeResult decodeImage(const cv::Mat &src, bool verbose) {
       return {r, var.label, {0, 0, src.cols, src.rows}};
     }
 
-    // 2. ROI-based decode (skip raw and synthetic-blur — contours not
-    // meaningful)
     if (var.label == "raw" || var.label == "synthetic-blur")
       continue;
     for (auto &rr : findCandidates(var.img)) {
-      cv::Mat patch = warpROI(gray, rr); // warp grayscale
+      cv::Mat patch = warpROI(gray, rr);
 
-      // Threshold the warped patch cleanly
       cv::Mat pBin;
       cv::threshold(patch, pBin, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
 
-      // Fast 30ms timeout on patches — if it's there it decodes instantly.
       r = dmtxTryDecode(pBin, 30);
       if (r.empty()) {
         cv::bitwise_not(pBin, pBin);
@@ -225,12 +196,12 @@ static DecodeResult decodeImage(const cv::Mat &src, bool verbose) {
   return {};
 }
 
-// Main
-
 static void usage(const char *prog) {
   std::cerr << "Usage:\n"
             << "  " << prog << " <image>                  Decode single image\n"
-            << "  " << prog << " --dir <dir> [--ext <exts>]  Batch decode (default exts: png,jpg,jpeg)\n"
+            << "  " << prog
+            << " --dir <dir> [--ext <exts>]  Batch decode (default exts: "
+               "png,jpg,jpeg)\n"
             << "\n"
             << "  --verbose    Show which preprocessing pass succeeded\n"
             << "  --debug <f>  Save annotated image (single mode only)\n";
