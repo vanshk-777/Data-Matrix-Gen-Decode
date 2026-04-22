@@ -231,6 +231,17 @@ sys     0m0.04s
 ```
 That's **~200ms** total round-trip from OpenCV raw-load all the way through downscaling, blurring, matrix detection, and payload execution.
 
+When batch-processing a folder of 3 generated matrices simultaneously:
+```bash
+$ time ./dmdecode --dir out --ext png
+out/pallet_234.png: pallet 234
+out/sm3.png: SM3
+out/rack_17.png: rack 17
+
+Decoded: 3/3
+./dmdecode --dir out --ext png  0.21s user 0.04s system 98% cpu 0.254 total
+```
+The overhead is minimal, with 3 images processing in just **~250ms**.
 ### All Options (`dmgen`)
 
 | Flag | Default | Description |
