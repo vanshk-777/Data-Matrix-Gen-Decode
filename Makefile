@@ -22,9 +22,9 @@ dmdecode: $(SRC_DIR)/dmdecode.cpp
 test: dmgen dmdecode
 	@mkdir -p test_out
 	@echo "==> Encode"
-	./dmgen -d "pallet 234" -o test_out/pallet_234.png -m 10
-	./dmgen -d "SM3"        -o test_out/sm3.png        -m 10
-	./dmgen -d "rack 17"    -o test_out/rack_17.png    -m 10
+	./dmgen -d "pallet 234" -o test_out/pallet_234.png --max-dim 120
+	./dmgen -d "SM3"        -o test_out/sm3.png        --max-dim 120
+	./dmgen -d "rack 17"    -o test_out/rack_17.png    --max-dim 120
 	@echo "==> Decode (round-trip)"
 	./dmdecode test_out/pallet_234.png
 	./dmdecode test_out/sm3.png

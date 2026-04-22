@@ -156,6 +156,9 @@ CV_LIBS  = $(shell pkg-config --libs opencv4)
 # PNG, 15px per module
 ./dmgen -d "pallet 234" -o out/pallet_234.png -m 15
 
+# PNG, scale automatically so output image never exceeds 120x120 pixels
+./dmgen -d "SM3" -o out/sm3.png --max-dim 120
+
 # Force a fixed 24×24 symbol size
 ./dmgen -d "pallet 234" -o out/pallet_234.svg -s 24x24
 ```
@@ -198,10 +201,14 @@ rack 17,rack_17
 ### Decoder
 
 ```bash
-# Decode a single image
+# Decode a single image (PNG or JPG)
 ./dmdecode test_out/pallet_234.png
+./dmdecode cam-scans/photo.jpg
 
-# Decode a batch directory
+# Decode a batch directory (automatically scans for png, jpg, jpeg)
+./dmdecode --dir test_out/
+
+# Force scanning of only specific extensions in a batch directory
 ./dmdecode --dir test_out/ --ext png
 
 # Debug mode: Output a heavily annotated, highlighted image

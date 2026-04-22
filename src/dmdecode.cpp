@@ -24,10 +24,6 @@ static std::string dmtxTryDecode(const cv::Mat &gray, int timeout_ms) {
     double scale = 300.0 / std::max(working.cols, working.rows);
     cv::resize(working, working, {}, scale, scale, cv::INTER_LINEAR);
   }
-  // Soften hard mathematical edges so libdmtx's scanner can model module
-  // centers
-  cv::GaussianBlur(working, working, cv::Size(5, 5), 0);
-
   // DmtxPack8bppK expects standard grayscale mapping: 0=black, 255=white
   cv::Mat inv = working;
 
@@ -46,7 +42,6 @@ static std::string dmtxTryDecode(const cv::Mat &gray, int timeout_ms) {
     return {};
   }
 
-  dmtxDecodeSetProp(dec, DmtxPropEdgeMin, 8);
   dmtxDecodeSetProp(dec, DmtxPropSymbolSize, DmtxSymbolShapeAuto);
 
   DmtxTime t = dmtxTimeAdd(dmtxTimeNow(), timeout_ms);
@@ -119,18 +114,29 @@ static std::vector<cv::RotatedRect> findCandidates(const cv::Mat &binary) {
   cv::findContours(binary, contours, cv::RETR_EXTERNAL,
                    cv::CHAIN_APPROX_SIMPLE);
 
+  // Sort by area descending
+  std::sort(contours.begin(), contours.end(),
+            [](const std::vector<cv::Point> &a, const std::vector<cv::Point> &b) {
+              return cv::contourArea(a) > cv::contourArea(b);
+            });
+
   std::vector<cv::RotatedRect> out;
   for (auto &c : contours) {
+    if (out.size() >= 15) // Max 15 ROIs per lighting variant (reduced from 30)
+      break;
+
     double area = cv::contourArea(c);
-    if (area < 300)
+    if (area < 900) // At least 30x30 pixels
       continue;
+
     cv::RotatedRect rr = cv::minAreaRect(c);
     float w = rr.size.width, h = rr.size.height;
     if (w < 1 || h < 1)
       continue;
+
     float aspect = (w > h) ? w / h : h / w;
-    if (aspect < 5.0)
-      out.push_back(rr); // reject very elongated shapes
+    if (aspect < 4.0)
+      out.push_back(rr); // Reject elongated streaks
   }
   return out;
 }
@@ -171,11 +177,19 @@ static DecodeResult decodeImage(const cv::Mat &src, bool verbose) {
   else
     cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
 
+  // Downscale massive camera scans (e.g. 12+ Megapixel) to max ~1500px dimension
+  // to prevent adaptiveThreshold and contour mapping from taking too long.
+  int max_dim = std::max(gray.cols, gray.rows);
+  if (max_dim > 1500) {
+    double scale = 1500.0 / max_dim;
+    cv::resize(gray, gray, {}, scale, scale, cv::INTER_AREA);
+  }
+
   auto variants = buildVariants(gray);
 
   for (auto &var : variants) {
-    // 1. Try full-image decode
-    std::string r = dmtxTryDecode(var.img, 300);
+    // 1. Try full-image decode (give it 1.5s for huge phone scans!)
+    std::string r = dmtxTryDecode(var.img, 1500);
     if (!r.empty()) {
       if (verbose)
         std::cerr << "[pass] full-image | prep: " << var.label << "\n";
@@ -193,10 +207,11 @@ static DecodeResult decodeImage(const cv::Mat &src, bool verbose) {
       cv::Mat pBin;
       cv::threshold(patch, pBin, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
 
-      r = dmtxTryDecode(pBin, 300);
+      // Fast 30ms timeout on patches — if it's there it decodes instantly.
+      r = dmtxTryDecode(pBin, 30);
       if (r.empty()) {
         cv::bitwise_not(pBin, pBin);
-        r = dmtxTryDecode(pBin, 300);
+        r = dmtxTryDecode(pBin, 30);
       }
       if (!r.empty()) {
         cv::Rect bbox = rr.boundingRect();
@@ -215,7 +230,7 @@ static DecodeResult decodeImage(const cv::Mat &src, bool verbose) {
 static void usage(const char *prog) {
   std::cerr << "Usage:\n"
             << "  " << prog << " <image>                  Decode single image\n"
-            << "  " << prog << " --dir <dir> [--ext <exts>]  Batch decode\n"
+            << "  " << prog << " --dir <dir> [--ext <exts>]  Batch decode (default exts: png,jpg,jpeg)\n"
             << "\n"
             << "  --verbose    Show which preprocessing pass succeeded\n"
             << "  --debug <f>  Save annotated image (single mode only)\n";
@@ -227,7 +242,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  std::string dirPath, debugOut, extFilter;
+  std::string dirPath, debugOut, extFilter = "png,jpg,jpeg";
   std::vector<std::string> images;
   bool verbose = false;
 

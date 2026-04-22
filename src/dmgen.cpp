@@ -342,7 +342,8 @@ static void usage(const char *prog) {
             << " --csv  <file> [--out-dir <dir>] [-m <px>] [-s <NxN>] [--fmt "
                "svg|png]\n"
             << "\n"
-            << "  -m <px>        Module size in pixels (default: 10)\n"
+            << "  -m <px>        Module size in pixels (default: 5)\n"
+            << "  --max-dim <px> Maximum image dimension. Dynamically overrides -m to fit.\n"
             << "  -s <NxN>       Symbol size (default: auto). See --sizes.\n"
             << "  --fmt svg|png  Batch output format (default: svg)\n"
             << "  --sizes        List all valid symbol sizes\n";
@@ -356,7 +357,8 @@ int main(int argc, char *argv[]) {
 
   std::string singleData, outFile, jsonFile, csvFile, outDir = "out",
                                                       batchFmt = "svg";
-  int moduleSize = 10;
+  int moduleSize = 5;
+  int maxDim = 0;
   DmtxSymbolSize symSize = DmtxSymbolShapeAuto;
 
   for (int i = 1; i < argc; ++i) {
@@ -392,6 +394,8 @@ int main(int argc, char *argv[]) {
       batchFmt = need("--fmt");
     else if (a == "-m")
       moduleSize = std::stoi(need("-m"));
+    else if (a == "--max-dim")
+      maxDim = std::stoi(need("--max-dim"));
     else if (a == "-s")
       symSize = parseSize(need("-s"));
     else {
@@ -409,11 +413,17 @@ int main(int argc, char *argv[]) {
   try {
     if (!singleData.empty()) {
       Grid g = encode(singleData, moduleSize, symSize);
+      int finalModule = moduleSize;
+      if (maxDim > 0) {
+        int maxCells = std::max(g.cols, g.rows) + 4; // 2 * 2 quiet zone
+        finalModule = maxDim / maxCells;
+        if (finalModule < 1) finalModule = 1;
+      }
       std::string out =
           outFile.empty() ? sanitize(singleData) + ".svg" : outFile;
-      writeOutput(g, out, moduleSize, singleData);
+      writeOutput(g, out, finalModule, singleData);
       std::cout << "Written: " << out << "  (" << g.cols << "x" << g.rows
-                << " modules)\n";
+                << " modules) @ " << finalModule << "px/mod\n";
       return 0;
     }
 
@@ -452,9 +462,15 @@ int main(int argc, char *argv[]) {
       std::string outPath = outDir + "/" + stem + "." + batchFmt;
       try {
         Grid g = encode(lbl.data, moduleSize, symSize);
-        writeOutput(g, outPath, moduleSize, lbl.data);
+        int finalModule = moduleSize;
+        if (maxDim > 0) {
+          int maxCells = std::max(g.cols, g.rows) + 4;
+          finalModule = maxDim / maxCells;
+          if (finalModule < 1) finalModule = 1;
+        }
+        writeOutput(g, outPath, finalModule, lbl.data);
         std::cout << "[" << (i + 1) << "/" << labels.size() << "] " << outPath
-                  << "  (" << g.cols << "x" << g.rows << ")\n";
+                  << "  (" << g.cols << "x" << g.rows << " @ " << finalModule << "px/mod)\n";
         ++ok;
       } catch (const std::exception &e) {
         std::cerr << "  ERROR '" << lbl.data << "': " << e.what() << "\n";
